@@ -12,7 +12,7 @@ architecture Behavioral of ComboLock is
     signal input_seq : sequence;
     signal index : integer := 0;
     type direction is (LEFT, RIGHT, NONE);
-    signal curr_dir : direction;
+    signal prev_dir : direction;
     
     type lock_state is (LOCKED, UNLOCKED, COMPARING, ERROR);
     signal curr_state, next_state : lock_state;
@@ -27,7 +27,7 @@ begin
     if (reset = '1') then
         curr_state <= LOCKED;
         dial_num <= "0000";
-        curr_dir <= NONE;
+        prev_dir <= NONE;
         index <= 0;
         directions_have_been_valid <= '1';
     elsif (rising_edge(clk)) then
@@ -39,28 +39,43 @@ state_behavior : process(BTNL, BTNR, BTNC, curr_state, dial_num)
 begin
     case curr_state is
         WHEN LOCKED =>
+            
+            -- ROTATING ----------------------------------------------------
             if (BTNL = '1') then -- left, decrement 1
                 if (dial_num = "0000") then -- wrap around to 9
                     dial_num <= "1001";
                 else
                     dial_num <= std_logic_vector(unsigned(dial_num) - 1);
                 end if;
-                curr_dir <= LEFT;
-                
-                
+                prev_dir <= LEFT;
+ 
             elsif (BTNR = '1') then -- right, increment 1
                 if (dial_num = "1001") then -- wrap around to 0
                     dial_num <= "0000";
                 else
                     dial_num <= std_logic_vector(unsigned(dial_num) + 1);
                 end if;
-                curr_dir <= RIGHT;
+                prev_dir <= RIGHT;
+            -- END ROTATING ----------------------------------------------------
+            
+            -- ENTER ----------------------------------------------------
+            elsif (BTNC = '1') then -- enter
+                -- DIRECTIONAL checks
+                if (index = 0 or index = 2) then -- should be going right
+                    if (prev_dir = LEFT) then
+                        directions_have_been_valid <= '0';
+                    end if;
+                elsif (index = 1) then -- should be going left
+                    if (prev_dir = RIGHT) then
+                        directions_have_been_valid <= '0';
+                    end if;
+                end if;
                 
-            elsif (BTNC = '1') then -- submit
-                -- TODO directional check
+                -- Actually submit
                 input_seq(index) <= dial_num;
                 index <= index + 1;                
             end if;
+            -- END ENTER ----------------------------------------------------
             
             if (input_seq'length = password'length) then
                 next_state <= COMPARING;
@@ -70,7 +85,7 @@ begin
         WHEN UNLOCKED =>
             -- TODO
         WHEN COMPARING =>
-            if (input_seq = password) then
+            if (input_seq = password and directions_have_been_valid = '1') then
                 next_state <= UNLOCKED;
             else
                 next_state <= ERROR;
