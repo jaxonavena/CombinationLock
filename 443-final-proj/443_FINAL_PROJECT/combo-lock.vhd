@@ -45,8 +45,7 @@ architecture Behavioral of ComboLock is
     
     signal input_seq : sequence;
     signal index : integer := 0;
-    type direction is (LEFT, RIGHT, NONE);
-    signal prev_dir : direction;
+
     
     type lock_state is (LOCKED, UNLOCKED, COMPARING, ERROR);
     signal curr_state, next_state : lock_state;
@@ -58,6 +57,10 @@ architecture Behavioral of ComboLock is
     
     signal reset : STD_LOGIC := '0';
     signal submitted : STD_LOGIC := '0';
+    
+    signal r : STD_LOGIC := '0';
+    signal l : STD_LOGIC := '0';
+
     
 
     signal btnc_event_sig, btnl_event_sig, btnr_event_sig : STD_LOGIC;
@@ -107,6 +110,8 @@ begin
         past_second_num <= password(1);
         past_third_num <= password(2);
         input_seq <= ("1111", "1111", "1111");
+        r <= '0';
+        l <= '0';
 
         -- Find the number one to the left of our second pw digit for later use
         if (past_second_num = "0000") then
@@ -139,6 +144,8 @@ begin
                 when "0111" => segments <= "1111000"; -- 7
                 when "1000" => segments <= "0000000"; -- 8
                 when "1001" => segments <= "0010000"; -- 9
+                when "1010" => segments <= "1000001"; -- U
+                when "1011" => segments <= "0000011"; -- E
                 when others => segments <= "1111111"; -- blank
             end case;
         end if;
@@ -147,6 +154,8 @@ begin
             WHEN LOCKED =>
                 -- ROTATING ----------------------------------------------------
                 if (btnl_event_sig = '1') then -- BTNL, left, decrement 1
+                    l <= '1';
+                    
                     if (index /= 1) then
                         valid <= '0';
                     end if;
@@ -156,7 +165,6 @@ begin
                     else
                         dial_num <= std_logic_vector(unsigned(dial_num) - 1);
                     end if;
-                    prev_dir <= LEFT;
                     
                     if (index = 1) then -- When dialing for 2nd num, must skip it once while turning left
                         if (dial_num = past_second_num) then
@@ -165,6 +173,8 @@ begin
                     end if;
      
                 elsif (btnr_event_sig = '1') then -- BTNR, right, increment 1
+                    r <= '1';
+                    
                     if (index = 1) then
                         valid <= '0';
                     end if;
@@ -174,7 +184,6 @@ begin
                     else
                         dial_num <= std_logic_vector(unsigned(dial_num) + 1);
                     end if;
-                    prev_dir <= RIGHT;
                     
                     if (index = 2) then -- Should not pass our 3rd number while going directly right from our 2nd
                         if (dial_num = past_third_num) then
@@ -207,13 +216,14 @@ begin
                 -- END ENTER ----------------------------------------------------
                 
             WHEN COMPARING =>
-                if (input_seq = password and valid = '1') then
+                if (input_seq = password and valid = '1' and l = '1' and r = '1') then
                     next_state <= UNLOCKED;
                 else
                     next_state <= ERROR;
                 end if;
                 
             WHEN UNLOCKED =>
+                dial_num <= "1010";
                 segments <= "1000001"; -- triggers U for Unlocked
                
                 if (BTNU = '1') then
@@ -221,6 +231,7 @@ begin
                 end if;
     
             WHEN ERROR =>
+               dial_num <= "1011";
                segments <= "0000011"; -- triggers E for error
                
                if (BTNU = '1') then
