@@ -1,0 +1,14 @@
+#-----------------------------------------------------------
+# Vivado v2023.2 (64-bit)
+# SW Build 4029153 on Fri Oct 13 20:14:34 MDT 2023
+# IP Build 4028589 on Sat Oct 14 00:45:43 MDT 2023
+# SharedData Build 4025554 on Tue Oct 10 17:18:54 MDT 2023
+# Start of session at: Tue May  6 21:06:57 2025
+# Process ID: 11548
+# Current directory: H:/Desktop/project_1/project_1.runs/impl_1
+# Command line: vivado.exe -log ComboLock.vdi -applog -product Vivado -messageDb vivado.pb -mode batch -source ComboLock.tcl -notrace
+# Log file: H:/Desktop/project_1/project_1.runs/impl_1/ComboLock.vdi
+# Journal file: H:/Desktop/project_1/project_1.runs/impl_1\vivado.jou
+# Running On: ENGR-38WD7X2, OS: Windows, CPU Frequency: 3192 MHz, CPU Physical cores: 6, Host memory: 16999 MB
+#-----------------------------------------------------------
+source ComboLock.tcl -notrace
