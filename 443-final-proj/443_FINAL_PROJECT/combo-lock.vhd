@@ -3,13 +3,40 @@ use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.numeric_std.all;
 
 entity ComboLock is
-    Port ( BTNL, BTNR, BTNC, clk : in STD_LOGIC;
+    Port ( BTNL, BTNR, BTNC, BTNU, clk : in STD_LOGIC;
            segments : out STD_LOGIC_VECTOR(6 downto 0);
            AN : out STD_LOGIC_VECTOR(7 downto 0)
            );
 end ComboLock;
 
 architecture Behavioral of ComboLock is
+    component debounced_btnc
+        Port (
+            clk       : in  STD_LOGIC;
+            reset     : in  STD_LOGIC;
+            BTNC      : in  STD_LOGIC;
+            btn_event : out STD_LOGIC
+        );
+    end component;
+    
+    component debounced_btnl
+        Port (
+            clk       : in  STD_LOGIC;
+            reset     : in  STD_LOGIC;
+            BTNL      : in  STD_LOGIC;
+            btn_event : out STD_LOGIC
+        );
+    end component;
+    
+    component debounced_btnr
+        Port (
+            clk       : in  STD_LOGIC;
+            reset     : in  STD_LOGIC;
+            BTNR      : in  STD_LOGIC;
+            btn_event : out STD_LOGIC
+        );
+    end component;
+
     type sequence is array (0 to 2) of std_logic_vector(3 downto 0);
     constant password : sequence := ("0100", "0010", "0000"); -- 420
     
@@ -30,10 +57,44 @@ architecture Behavioral of ComboLock is
     signal skipped_second_num : STD_LOGIC := '0';
     
     signal reset : STD_LOGIC := '0';
+    signal submitted : STD_LOGIC := '0';
+    
+
+    signal btnc_event_sig, btnl_event_sig, btnr_event_sig : STD_LOGIC;
+
+    
 begin
 
-state_behavior : process(BTNL, BTNR, BTNC, clk)
+btnc_debounce_inst : debounced_btnc
+    port map (
+        clk       => clk,
+        reset     => reset,
+        BTNC      => BTNC,
+        btn_event => btnc_event_sig
+    );
+
+
+btnl_debounce_inst : debounced_btnl
+    port map (
+        clk       => clk,
+        reset     => reset,
+        BTNL      => BTNL,
+        btn_event => btnl_event_sig
+    );
+
+
+btnr_debounce_inst : debounced_btnr
+    port map (
+        clk       => clk,
+        reset     => reset,
+        BTNR      => BTNR,
+        btn_event => btnr_event_sig
+    );
+
+
+state_behavior : process(BTNL, BTNR, BTNC, BTNU, clk)
 begin
+    AN <= "11111110";
     if (reset = '1') then
         curr_state <= LOCKED;
         next_state <= LOCKED;
@@ -41,10 +102,18 @@ begin
         prev_dir <= NONE;
         index <= 0;
         valid <= '1';
+        submitted <= '0';
         skipped_second_num <= '0';
+        past_second_num <= password(1);
         past_third_num <= password(2);
-        input_seq <= ("0000", "0000", "0000");
-        segments <= "0000000";
+        input_seq <= ("1111", "1111", "1111");
+
+        -- Find the number one to the left of our second pw digit for later use
+        if (past_second_num = "0000") then
+           past_second_num <= "1001";
+        else
+           past_second_num <= std_logic_vector(unsigned(past_second_num) - 1);
+        end if;
         
         -- Find the number one to the right of our third pw digit for later use
         if (past_third_num = "1001") then
@@ -53,34 +122,31 @@ begin
            past_third_num <= std_logic_vector(unsigned(past_third_num) + 1);
         end if;
         
+        reset <= '0';
+        
     elsif rising_edge(clk) then
-        AN <= "11111110";
         curr_state <= next_state;
-   
-        case dial_num is
-            when "0000" => segments <= "1000000"; -- 0
-            when "0001" => segments <= "1111001"; -- 1
-            when "0010" => segments <= "0100100"; -- 2
-            when "0011" => segments <= "0110000"; -- 3
-            when "0100" => segments <= "0011001"; -- 4
-            when "0101" => segments <= "0010010"; -- 5
-            when "0110" => segments <= "0000010"; -- 6
-            when "0111" => segments <= "1111000"; -- 7
-            when "1000" => segments <= "0000000"; -- 8
-            when "1001" => segments <= "0010000"; -- 9
-            when "1010" => segments <= "0111111"; -- O (for OPEN)
-            when "1011" => segments <= "0011000"; -- P (for OPEN)
-            when "1100" => segments <= "0100011"; -- E (for OPEN and ERR)
-            when "1101" => segments <= "0011011"; -- N (for OPEN)
-            when "1110" => segments <= "0100011"; -- E (for ERR)
-            when "1111" => segments <= "0011001"; -- R (for ERR)
-            when others => segments <= "1111111"; -- blank
-        end case;
+        
+        if (submitted = '0') then
+            case dial_num is
+                when "0000" => segments <= "1000000"; -- 0
+                when "0001" => segments <= "1111001"; -- 1
+                when "0010" => segments <= "0100100"; -- 2
+                when "0011" => segments <= "0110000"; -- 3
+                when "0100" => segments <= "0011001"; -- 4
+                when "0101" => segments <= "0010010"; -- 5
+                when "0110" => segments <= "0000010"; -- 6
+                when "0111" => segments <= "1111000"; -- 7
+                when "1000" => segments <= "0000000"; -- 8
+                when "1001" => segments <= "0010000"; -- 9
+                when others => segments <= "1111111"; -- blank
+            end case;
+        end if;
     
         case curr_state is
             WHEN LOCKED =>
                 -- ROTATING ----------------------------------------------------
-                if (BTNL = '1') then -- left, decrement 1
+                if (btnl_event_sig = '1') then -- BTNL, left, decrement 1
                     if (index /= 1) then
                         valid <= '0';
                     end if;
@@ -93,12 +159,12 @@ begin
                     prev_dir <= LEFT;
                     
                     if (index = 1) then -- When dialing for 2nd num, must skip it once while turning left
-                        if (dial_num = password(1)) then
+                        if (dial_num = past_second_num) then
                             skipped_second_num <= '1';
                         end if;
                     end if;
      
-                elsif (BTNR = '1') then -- right, increment 1
+                elsif (btnr_event_sig = '1') then -- BTNR, right, increment 1
                     if (index = 1) then
                         valid <= '0';
                     end if;
@@ -112,23 +178,19 @@ begin
                     
                     if (index = 2) then -- Should not pass our 3rd number while going directly right from our 2nd
                         if (dial_num = past_third_num) then
-                            valid <= '1'; -- overshot our third number, invalid entry
+                            valid <= '0'; -- overshot our third number, invalid entry
                         end if;
                     end if;
                 -- END ROTATING ----------------------------------------------------
                 
                 -- ENTER ----------------------------------------------------
-                elsif (BTNC = '1') then -- enter
+                elsif (btnc_event_sig = '1') then -- BTNC, enter
                     -- DIRECTIONAL checks
                     if (index = 1) then
                         if (skipped_second_num = '0') then
                             valid <= '0';
                         end if;
                     end if;
-                    
-                    -- Actually submit to input_seq
-                    input_seq(index) <= dial_num;
-                    index <= index + 1;
                     
                     -- AUTO SUBMIT when you've entered 3 numbers
                     if index < 3 then
@@ -137,26 +199,33 @@ begin
                     end if;
                     
                     if (index = 2) then
+                        input_seq(index) <= dial_num;
                         next_state <= COMPARING;
+                        submitted <= '1';
                     end if;
                 end if;
                 -- END ENTER ----------------------------------------------------
                 
-                
-            WHEN UNLOCKED =>
-               segments <= "0111111";
-               AN <= "11111110";
             WHEN COMPARING =>
                 if (input_seq = password and valid = '1') then
                     next_state <= UNLOCKED;
                 else
                     next_state <= ERROR;
                 end if;
+                
+            WHEN UNLOCKED =>
+                segments <= "1000001"; -- triggers U for Unlocked
+               
+                if (BTNU = '1') then
+                    reset<= '1';
+                end if;
     
             WHEN ERROR =>
-               segments <= "0100011";
-               AN <= "11111110";
-               reset <= '1';
+               segments <= "0000011"; -- triggers E for error
+               
+               if (BTNU = '1') then
+                    reset<= '1';
+               end if;
         end case;
     end if;
 end process;
