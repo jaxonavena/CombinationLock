@@ -3,9 +3,10 @@ use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.numeric_std.all;
 
 entity ComboLock is
-    Port ( BTNL, BTNR, BTNC, clk, reset : in STD_LOGIC;
-           SEG : out STD_LOGIC_VECTOR(6 downto 0);
-           AN : out STD_LOGIC_VECTOR(7 downto 0));
+    Port ( BTNL, BTNR, BTNC, clk : in STD_LOGIC;
+           segments : out STD_LOGIC_VECTOR(6 downto 0);
+           AN : out STD_LOGIC_VECTOR(7 downto 0)
+           );
 end ComboLock;
 
 architecture Behavioral of ComboLock is
@@ -22,22 +23,18 @@ architecture Behavioral of ComboLock is
     
     type lock_state is (LOCKED, UNLOCKED, COMPARING, ERROR);
     signal curr_state, next_state : lock_state;
-    signal dial_num: STD_LOGIC_VECTOR(3 downto 0); -- current number while spinning
-    signal visual_output: STD_LOGIC_VECTOR(3 downto 0); -- current number while spinning
+    signal dial_num: STD_LOGIC_VECTOR(3 downto 0) := "0000"; -- current number while spinning
 
-    
+
     signal valid : STD_LOGIC := '1';
     signal skipped_second_num : STD_LOGIC := '0';
     
-    signal char_index : integer range 0 to 3 := 0;
-    signal letter_counter : unsigned(22 downto 0) := (others => '0');
-    
-    signal reset_from_code : STD_LOGIC := '0';
+    signal reset : STD_LOGIC := '0';
 begin
 
-reset_behavior : process(clk, reset)
+state_behavior : process(BTNL, BTNR, BTNC, clk)
 begin
-    if (reset = '1' or reset_from_code = '1') then
+    if (reset = '1') then
         curr_state <= LOCKED;
         next_state <= LOCKED;
         dial_num <= "0000";
@@ -47,9 +44,7 @@ begin
         skipped_second_num <= '0';
         past_third_num <= password(2);
         input_seq <= ("0000", "0000", "0000");
-        visual_output <= "0000";
-        char_index <= 0;
-        letter_counter <= (others => '0');
+        segments <= "0000000";
         
         -- Find the number one to the right of our third pw digit for later use
         if (past_third_num = "1001") then
@@ -58,16 +53,30 @@ begin
            past_third_num <= std_logic_vector(unsigned(past_third_num) + 1);
         end if;
         
-    elsif (rising_edge(clk)) then
+    elsif rising_edge(clk) then
+        AN <= "11111110";
         curr_state <= next_state;
-    end if;
-end process;
-
-state_behavior : process(BTNL, BTNR, BTNC, curr_state, dial_num, clk, reset)
-begin
-    if rising_edge(clk) then
-        letter_counter <= letter_counter + 1;
-        
+   
+        case dial_num is
+            when "0000" => segments <= "1000000"; -- 0
+            when "0001" => segments <= "1111001"; -- 1
+            when "0010" => segments <= "0100100"; -- 2
+            when "0011" => segments <= "0110000"; -- 3
+            when "0100" => segments <= "0011001"; -- 4
+            when "0101" => segments <= "0010010"; -- 5
+            when "0110" => segments <= "0000010"; -- 6
+            when "0111" => segments <= "1111000"; -- 7
+            when "1000" => segments <= "0000000"; -- 8
+            when "1001" => segments <= "0010000"; -- 9
+            when "1010" => segments <= "0111111"; -- O (for OPEN)
+            when "1011" => segments <= "0011000"; -- P (for OPEN)
+            when "1100" => segments <= "0100011"; -- E (for OPEN and ERR)
+            when "1101" => segments <= "0011011"; -- N (for OPEN)
+            when "1110" => segments <= "0100011"; -- E (for ERR)
+            when "1111" => segments <= "0011001"; -- R (for ERR)
+            when others => segments <= "1111111"; -- blank
+        end case;
+    
         case curr_state is
             WHEN LOCKED =>
                 -- ROTATING ----------------------------------------------------
@@ -122,7 +131,12 @@ begin
                     index <= index + 1;
                     
                     -- AUTO SUBMIT when you've entered 3 numbers
-                    if (index + 1 = password'length) then
+                    if index < 3 then
+                        input_seq(index) <= dial_num;
+                        index <= index + 1;
+                    end if;
+                    
+                    if (index = 2) then
                         next_state <= COMPARING;
                     end if;
                 end if;
@@ -130,19 +144,8 @@ begin
                 
                 
             WHEN UNLOCKED =>
-                case char_index is
-                    when 0 => visual_output <= "1010";  -- O
-                    when 1 => visual_output <= "1011";  -- P
-                    when 2 => visual_output <= "1100";  -- E
-                    when 3 => visual_output <= "1101";  -- N
-                    when others => visual_output <= "0000";
-                end case;
-    
-                if char_index = 3 then
-                    char_index <= 0;
-                else
-                    char_index <= char_index + 1;
-                end if;
+               segments <= "0111111";
+               AN <= "11111110";
             WHEN COMPARING =>
                 if (input_seq = password and valid = '1') then
                     next_state <= UNLOCKED;
@@ -151,72 +154,10 @@ begin
                 end if;
     
             WHEN ERROR =>
-                case char_index is
-                    when 0 => visual_output <= "1110";  -- E
-                    when 1 => visual_output <= "1111";  -- R
-                    when 2 => visual_output <= "1111";  -- R again
-                    when others => visual_output <= "0000";
-                end case;
-    
-                if char_index = 2 then
-                    char_index <= 0;
-                else
-                    char_index <= char_index + 1;
-                end if;
-                
-                if char_index = 2 then  -- after showing "ERR"
-                    reset_from_code <= '1';
-                end if;
+               segments <= "0100011";
+               AN <= "11111110";
+               reset <= '1';
         end case;
     end if;
 end process;
 end Behavioral;
-
-
-library IEEE;
-use IEEE.STD_LOGIC_1164.ALL;
-use IEEE.numeric_std.all;
-
-entity BCDto7Seg is
-    Port ( bcd     : in  STD_LOGIC_VECTOR(3 downto 0);
-           segments : out STD_LOGIC_VECTOR(6 downto 0);  -- a to g
-           clk     : in  STD_LOGIC;
-           reset   : in  STD_LOGIC);
-end BCDto7Seg;
-
-architecture BehavioralSeg of BCDto7Seg is
-
-signal blink_counter : unsigned(23 downto 0) := (others => '0');  -- 24-bit counter
-signal blink_signal : std_logic := '0';  -- Signal to toggle display
-signal display_on : std_logic := '1';  -- Control whether to display letters or blank
-
-begin
-    -- Process for selecting the 7-segment display output
-    process(bcd, blink_signal)
-    begin
-        if blink_signal = '1' then  -- When blink signal is high, display the letters
-            case bcd is
-                when "0000" => segments <= "1000000"; -- 0
-                when "0001" => segments <= "1111001"; -- 1
-                when "0010" => segments <= "0100100"; -- 2
-                when "0011" => segments <= "0110000"; -- 3
-                when "0100" => segments <= "0011001"; -- 4
-                when "0101" => segments <= "0010010"; -- 5
-                when "0110" => segments <= "0000010"; -- 6
-                when "0111" => segments <= "1111000"; -- 7
-                when "1000" => segments <= "0000000"; -- 8
-                when "1001" => segments <= "0010000"; -- 9
-                when "1010" => segments <= "0111111"; -- O (for OPEN)
-                when "1011" => segments <= "0011000"; -- P (for OPEN)
-                when "1100" => segments <= "0100011"; -- E (for OPEN and ERR)
-                when "1101" => segments <= "0011011"; -- N (for OPEN)
-                when "1110" => segments <= "0100011"; -- E (for ERR)
-                when "1111" => segments <= "0011001"; -- R (for ERR)
-                when others => segments <= "1111111"; -- blank
-            end case;
-        else
-            segments <= "1111111";  -- Blank display when blink_signal is low
-        end if;
-    end process;
-
-end BehavioralSeg;
