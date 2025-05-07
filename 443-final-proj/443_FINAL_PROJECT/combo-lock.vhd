@@ -102,7 +102,6 @@ begin
         curr_state <= LOCKED;
         next_state <= LOCKED;
         dial_num <= "0000";
-        prev_dir <= NONE;
         index <= 0;
         valid <= '1';
         submitted <= '0';
