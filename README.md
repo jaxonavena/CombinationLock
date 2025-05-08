@@ -3,6 +3,10 @@ A classic spinning combination lock represented within a Vivado project using VH
 
 - - -
 
+Download the `.zip` file if you are going to try it out yourself.
+
+- - -
+
 The password is currently hardcoded to be `420` 
 
 Once your Nexys A7 is programmed:
